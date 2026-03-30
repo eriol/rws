@@ -60,6 +60,7 @@ mod tests {
                 name: "robot".into(),
                 src_dir: "src".into(),
                 common_justfile: Some(".rws/justfile.common".into()),
+                envrc: None,
             },
             packages: vec![
                 PackageEntry {

@@ -61,6 +61,32 @@ fn init_copies_common_justfile_into_dot_rws() {
 }
 
 #[test]
+fn init_copies_envrc_into_dot_rws_and_root() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let envrc = temp.path().join("envrc");
+    fs::write(&envrc, "export DIRENV_DISTROBOX=debian\n").unwrap();
+
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "init",
+            "--envrc",
+            envrc.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/envrc")).unwrap(),
+        fs::read_to_string(workspace.join(".envrc")).unwrap()
+    );
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    assert!(manifest.contains("envrc = \".rws/envrc\""));
+}
+
+#[test]
 fn add_sync_and_remove_manage_symlinks_and_root_justfile() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");
@@ -89,12 +115,10 @@ fn add_sync_and_remove_manage_symlinks_and_root_justfile() {
         .success();
 
     let link = workspace.join("src/camera");
-    assert!(
-        fs::symlink_metadata(&link)
-            .unwrap()
-            .file_type()
-            .is_symlink()
-    );
+    assert!(fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_symlink());
     let justfile = fs::read_to_string(workspace.join("justfile")).unwrap();
     assert!(justfile.contains("mod camera 'src/camera/.rws/justfile'"));
 
@@ -274,6 +298,66 @@ fn doctor_returns_non_zero_for_missing_source() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains("error: missing source path"));
+}
+
+#[test]
+fn sync_overwrites_root_envrc_from_managed_envrc() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let envrc = temp.path().join("envrc");
+    fs::write(&envrc, "export DIRENV_DISTROBOX=debian\n").unwrap();
+
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "init",
+            "--envrc",
+            envrc.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    fs::write(workspace.join(".envrc"), "changed\n").unwrap();
+
+    bin()
+        .args(["--workspace", workspace.to_str().unwrap(), "sync"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/envrc")).unwrap(),
+        fs::read_to_string(workspace.join(".envrc")).unwrap()
+    );
+}
+
+#[test]
+fn doctor_warns_when_root_envrc_differs() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let envrc = temp.path().join("envrc");
+    fs::write(&envrc, "export DIRENV_DISTROBOX=debian\n").unwrap();
+
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "init",
+            "--envrc",
+            envrc.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    fs::write(workspace.join(".envrc"), "changed\n").unwrap();
+
+    bin()
+        .args(["--workspace", workspace.to_str().unwrap(), "doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "warning: root envrc differs from managed envrc source",
+        ));
 }
 
 #[test]

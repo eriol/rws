@@ -15,6 +15,8 @@ pub enum Command {
     Init {
         #[arg(long)]
         common_justfile: Option<Utf8PathBuf>,
+        #[arg(long)]
+        envrc: Option<Utf8PathBuf>,
     },
     Add {
         source: Utf8PathBuf,

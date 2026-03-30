@@ -5,8 +5,15 @@ use crate::workspace;
 
 pub fn run(cli: Cli) -> Result<u8> {
     match cli.command {
-        Command::Init { common_justfile } => {
-            workspace::init_workspace(&cli.workspace, common_justfile.as_deref())?;
+        Command::Init {
+            common_justfile,
+            envrc,
+        } => {
+            workspace::init_workspace(
+                &cli.workspace,
+                common_justfile.as_deref(),
+                envrc.as_deref(),
+            )?;
             println!("initialized workspace at {}", cli.workspace);
             Ok(0)
         }

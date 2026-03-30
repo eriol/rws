@@ -8,8 +8,8 @@ use crate::fs_utils::{canonicalize_utf8, copy_file, ensure_dir, path_exists, wri
 use crate::justfile::generate_root_justfile;
 use crate::linker::{SyncReport, sync_links};
 use crate::manifest::{
-    COMMON_JUSTFILE, MANIFEST_DIR, Manifest, PACKAGE_JUSTFILE, PackageEntry, manifest_path,
-    normalize_package_name, validate_package_name,
+    COMMON_JUSTFILE, MANIFEST_DIR, Manifest, PACKAGE_JUSTFILE, PackageEntry, WORKSPACE_ENVRC,
+    manifest_path, normalize_package_name, validate_package_name,
 };
 use crate::ros::detect_package_name;
 
@@ -27,7 +27,11 @@ pub struct DoctorReport {
     pub errors: Vec<String>,
 }
 
-pub fn init_workspace(workspace_root: &Utf8Path, common_justfile: Option<&Utf8Path>) -> Result<()> {
+pub fn init_workspace(
+    workspace_root: &Utf8Path,
+    common_justfile: Option<&Utf8Path>,
+    envrc: Option<&Utf8Path>,
+) -> Result<()> {
     ensure_dir(workspace_root)?;
     ensure_dir(&workspace_root.join("src"))?;
     ensure_dir(&workspace_root.join(MANIFEST_DIR))?;
@@ -46,12 +50,24 @@ pub fn init_workspace(workspace_root: &Utf8Path, common_justfile: Option<&Utf8Pa
         None
     };
 
+    let envrc_manifest_path = if let Some(envrc_source) = envrc {
+        if !path_exists(envrc_source) {
+            bail!(RwsError::MissingPath(envrc_source.to_path_buf()));
+        }
+        let stored_envrc = workspace_root.join(WORKSPACE_ENVRC);
+        copy_file(envrc_source, &stored_envrc)?;
+        copy_file(&stored_envrc, &workspace_root.join(".envrc"))?;
+        Some(Utf8PathBuf::from(WORKSPACE_ENVRC))
+    } else {
+        None
+    };
+
     let name = workspace_root
         .file_name()
         .filter(|name| !name.is_empty())
         .unwrap_or("workspace")
         .to_string();
-    let manifest = Manifest::new(name, common_manifest_path);
+    let manifest = Manifest::new(name, common_manifest_path, envrc_manifest_path);
     manifest.save(&manifest_path(workspace_root))?;
     generate_and_write_justfile(workspace_root, &manifest)
 }
@@ -124,6 +140,7 @@ pub fn list_packages(workspace_root: &Utf8Path) -> Result<Vec<ListRow>> {
 pub fn sync_workspace(workspace_root: &Utf8Path) -> Result<SyncReport> {
     let manifest = load_manifest(workspace_root)?;
     let report = sync_links(workspace_root, &manifest)?;
+    sync_envrc(workspace_root, &manifest)?;
     generate_and_write_justfile(workspace_root, &manifest)?;
     Ok(report)
 }
@@ -151,6 +168,33 @@ pub fn doctor_workspace(workspace_root: &Utf8Path) -> Result<DoctorReport> {
             report
                 .warnings
                 .push(format!("missing common justfile: {path}"));
+        }
+    }
+
+    if let Some(envrc) = &manifest.workspace.envrc {
+        let stored_envrc = workspace_root.join(envrc);
+        if !stored_envrc.exists() {
+            report
+                .warnings
+                .push(format!("missing managed envrc source: {stored_envrc}"));
+        } else {
+            let root_envrc = workspace_root.join(".envrc");
+            if !root_envrc.exists() {
+                report
+                    .warnings
+                    .push(format!("missing root envrc: {root_envrc}"));
+            } else {
+                let stored_contents = fs::read_to_string(&stored_envrc)
+                    .with_context(|| format!("failed to read {stored_envrc}"))?;
+                let root_contents = fs::read_to_string(&root_envrc)
+                    .with_context(|| format!("failed to read {root_envrc}"))?;
+                if stored_contents != root_contents {
+                    report.warnings.push(format!(
+                        "root envrc differs from managed envrc source: {}",
+                        root_envrc
+                    ));
+                }
+            }
         }
     }
 
@@ -242,4 +286,17 @@ fn ensure_generated_justfile_can_be_written(path: &Utf8Path) -> Result<()> {
     } else {
         bail!(RwsError::PathConflict(path.to_path_buf()));
     }
+}
+
+fn sync_envrc(workspace_root: &Utf8Path, manifest: &Manifest) -> Result<()> {
+    let Some(envrc) = &manifest.workspace.envrc else {
+        return Ok(());
+    };
+
+    let source = workspace_root.join(envrc);
+    if !source.exists() {
+        return Ok(());
+    }
+
+    copy_file(&source, &workspace_root.join(".envrc"))
 }

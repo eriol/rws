@@ -2,7 +2,8 @@
 
 `rws` manages a ROS workspace by registering external packages, linking them
 into `src/`, and generating a root `justfile` that exposes each package as a
-module.
+module. You can also provide a `envrc` that will be exposed at the root of the
+workspace.
 
 The final workspace layout is:
 
@@ -12,7 +13,9 @@ workspace/
   .rws/
     rws.toml
     justfile.common
+    envrc
   justfile
+  .envrc
 ```
 
 Each package can provide its own justfile at `.rws/justfile`:
@@ -27,7 +30,7 @@ camera/
 ## Usage
 
 ```bash
-rws init --workspace ~/ws/my_robot --common-justfile path/to/common.just
+rws init --workspace ~/ws/my_robot --common-justfile path/to/common.just --envrc path/to/.envrc
 rws add ~/dev/robot/camera
 rws add ~/dev/robot/lidar
 rws sync

@@ -12,6 +12,7 @@ pub const MANIFEST_DIR: &str = ".rws";
 pub const MANIFEST_FILE: &str = "rws.toml";
 pub const PACKAGE_JUSTFILE: &str = ".rws/justfile";
 pub const COMMON_JUSTFILE: &str = ".rws/justfile.common";
+pub const WORKSPACE_ENVRC: &str = ".rws/envrc";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Manifest {
@@ -26,6 +27,8 @@ pub struct WorkspaceConfig {
     pub src_dir: Utf8PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub common_justfile: Option<Utf8PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub envrc: Option<Utf8PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -38,12 +41,17 @@ pub struct PackageEntry {
 }
 
 impl Manifest {
-    pub fn new(workspace_name: String, common_justfile: Option<Utf8PathBuf>) -> Self {
+    pub fn new(
+        workspace_name: String,
+        common_justfile: Option<Utf8PathBuf>,
+        envrc: Option<Utf8PathBuf>,
+    ) -> Self {
         Self {
             workspace: WorkspaceConfig {
                 name: workspace_name,
                 src_dir: Utf8PathBuf::from("src"),
                 common_justfile,
+                envrc,
             },
             packages: Vec::new(),
         }
@@ -121,6 +129,7 @@ mod tests {
                 name: "robot".into(),
                 src_dir: "src".into(),
                 common_justfile: Some(COMMON_JUSTFILE.into()),
+                envrc: Some(WORKSPACE_ENVRC.into()),
             },
             packages: vec![PackageEntry {
                 name: "camera".into(),
