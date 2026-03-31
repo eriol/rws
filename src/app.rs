@@ -1,6 +1,9 @@
+use std::io;
+
 use anyhow::Result;
 
 use crate::cli::{Cli, Command};
+use crate::manifest::manifest_path;
 use crate::workspace;
 
 pub fn run(cli: Cli) -> Result<u8> {
@@ -9,6 +12,12 @@ pub fn run(cli: Cli) -> Result<u8> {
             common_justfile,
             envrc,
         } => {
+            let manifest_path = manifest_path(&cli.workspace);
+            if manifest_path.exists() && !confirm_reinitialize(&manifest_path)? {
+                println!("init cancelled");
+                return Ok(0);
+            }
+
             workspace::init_workspace(
                 &cli.workspace,
                 common_justfile.as_deref(),
@@ -64,4 +73,16 @@ pub fn run(cli: Cli) -> Result<u8> {
             }
         }
     }
+}
+
+fn confirm_reinitialize(manifest_path: &camino::Utf8Path) -> Result<bool> {
+    println!(
+        "workspace manifest already exists at {}. Reinitialize and overwrite it? [y/N]",
+        manifest_path
+    );
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let answer = input.trim().to_ascii_lowercase();
+    Ok(matches!(answer.as_str(), "y" | "yes"))
 }

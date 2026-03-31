@@ -87,6 +87,63 @@ fn init_copies_envrc_into_dot_rws_and_root() {
 }
 
 #[test]
+fn init_prompts_before_overwriting_existing_manifest_and_preserves_it_when_declined() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+
+    bin()
+        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .assert()
+        .success();
+
+    let manifest_path = workspace.join(".rws/rws.toml");
+    fs::write(&manifest_path, "custom = true\n").unwrap();
+
+    bin()
+        .write_stdin("n\n")
+        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "workspace manifest already exists",
+        ))
+        .stdout(predicate::str::contains("init cancelled"));
+
+    assert_eq!(
+        fs::read_to_string(&manifest_path).unwrap(),
+        "custom = true\n"
+    );
+}
+
+#[test]
+fn init_overwrites_existing_manifest_after_confirmation() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+
+    bin()
+        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .assert()
+        .success();
+
+    let manifest_path = workspace.join(".rws/rws.toml");
+    fs::write(&manifest_path, "custom = true\n").unwrap();
+
+    bin()
+        .write_stdin("y\n")
+        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "workspace manifest already exists",
+        ))
+        .stdout(predicate::str::contains("initialized workspace at"));
+
+    let manifest = fs::read_to_string(&manifest_path).unwrap();
+    assert_ne!(manifest, "custom = true\n");
+    assert!(manifest.contains("name = \"ws\""));
+}
+
+#[test]
 fn add_sync_and_remove_manage_symlinks_and_root_justfile() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");
