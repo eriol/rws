@@ -88,7 +88,19 @@ mod tests {
 
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join(".rws")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("src/camera/.rws")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("src/lidar/.rws")).unwrap();
         std::fs::write(tmp.path().join(".rws/justfile.common"), "build:\n  true\n").unwrap();
+        std::fs::write(
+            tmp.path().join("src/camera/.rws/justfile"),
+            "start:\n  true\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("src/lidar/.rws/justfile"),
+            "start:\n  true\n",
+        )
+        .unwrap();
         let root = camino::Utf8Path::from_path(tmp.path()).unwrap();
 
         let generated = generate_root_justfile(&manifest, root);
