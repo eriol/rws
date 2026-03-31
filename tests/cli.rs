@@ -267,6 +267,37 @@ fn doctor_returns_zero_for_warnings_only() {
 }
 
 #[test]
+fn sync_skips_modules_for_packages_without_justfiles() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let packages_root = temp.path().join("pkgs");
+    fs::create_dir_all(&packages_root).unwrap();
+    let nav = create_package(&packages_root, "visual_nav", false);
+
+    bin()
+        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .assert()
+        .success();
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "add",
+            nav.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    bin()
+        .args(["--workspace", workspace.to_str().unwrap(), "sync"])
+        .assert()
+        .success();
+
+    let justfile = fs::read_to_string(workspace.join("justfile")).unwrap();
+    assert!(!justfile.contains("mod visual_nav 'src/visual_nav/.rws/justfile'"));
+    assert!(!justfile.contains("@echo visual_nav"));
+}
+
+#[test]
 fn doctor_returns_non_zero_for_missing_source() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");

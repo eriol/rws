@@ -21,6 +21,12 @@ pub fn generate_root_justfile(manifest: &Manifest, workspace_root: &Utf8Path) ->
         .packages
         .iter()
         .filter(|package| package.enabled)
+        .filter(|package| {
+            workspace_root
+                .join(&package.link)
+                .join(&package.justfile)
+                .exists()
+        })
         .collect::<Vec<_>>();
     packages.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -95,5 +101,50 @@ mod tests {
             .find("mod lidar 'src/lidar/.rws/justfile'")
             .unwrap();
         assert!(camera_idx < lidar_idx);
+    }
+
+    #[test]
+    fn generated_justfile_skips_packages_without_existing_justfiles() {
+        let manifest = Manifest {
+            workspace: WorkspaceConfig {
+                name: "robot".into(),
+                src_dir: "src".into(),
+                common_justfile: None,
+                envrc: None,
+            },
+            packages: vec![
+                PackageEntry {
+                    name: "camera".into(),
+                    source: "/tmp/camera".into(),
+                    link: "src/camera".into(),
+                    justfile: ".rws/justfile".into(),
+                    enabled: true,
+                },
+                PackageEntry {
+                    name: "lidar".into(),
+                    source: "/tmp/lidar".into(),
+                    link: "src/lidar".into(),
+                    justfile: ".rws/justfile".into(),
+                    enabled: true,
+                },
+            ],
+        };
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src/camera/.rws")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("src/lidar")).unwrap();
+        std::fs::write(
+            tmp.path().join("src/camera/.rws/justfile"),
+            "start:\n  true\n",
+        )
+        .unwrap();
+        let root = camino::Utf8Path::from_path(tmp.path()).unwrap();
+
+        let generated = generate_root_justfile(&manifest, root);
+
+        assert!(generated.contains("mod camera 'src/camera/.rws/justfile'"));
+        assert!(!generated.contains("mod lidar 'src/lidar/.rws/justfile'"));
+        assert!(generated.contains("  @echo camera"));
+        assert!(!generated.contains("  @echo lidar"));
     }
 }
