@@ -12,23 +12,15 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    Workspace {
-        #[command(subcommand)]
-        command: WorkspaceCommand,
-    },
-    Package {
-        #[command(subcommand)]
-        command: PackageCommand,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-pub enum WorkspaceCommand {
     Init(WorkspaceFilesArgs),
     Update(WorkspaceUpdateArgs),
     List,
     Sync,
     Doctor,
+    Package {
+        #[command(subcommand)]
+        command: PackageCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]

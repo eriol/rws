@@ -3,7 +3,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum RwsError {
-    #[error("workspace manifest already exists at {0}; use `rws workspace update` to modify it")]
+    #[error("workspace manifest already exists at {0}; use `rws update` to modify it")]
     WorkspaceAlreadyInitialized(Utf8PathBuf),
     #[error("workspace manifest not found at {0}")]
     MissingManifest(Utf8PathBuf),
