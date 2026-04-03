@@ -28,7 +28,12 @@ fn init_creates_workspace_and_generated_justfile() {
     let workspace = temp.path().join("ws");
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
         .success();
 
@@ -48,6 +53,7 @@ fn init_copies_common_justfile_into_dot_rws() {
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "workspace",
             "init",
             "--common-justfile",
             common.to_str().unwrap(),
@@ -71,6 +77,7 @@ fn init_copies_envrc_into_dot_rws_and_root() {
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "workspace",
             "init",
             "--envrc",
             envrc.to_str().unwrap(),
@@ -87,12 +94,17 @@ fn init_copies_envrc_into_dot_rws_and_root() {
 }
 
 #[test]
-fn init_prompts_before_overwriting_existing_manifest_and_preserves_it_when_declined() {
+fn init_rejects_existing_manifest_and_points_to_update() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
         .success();
 
@@ -100,14 +112,17 @@ fn init_prompts_before_overwriting_existing_manifest_and_preserves_it_when_decli
     fs::write(&manifest_path, "custom = true\n").unwrap();
 
     bin()
-        .write_stdin("n\n")
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "workspace manifest already exists",
-        ))
-        .stdout(predicate::str::contains("init cancelled"));
+        .failure()
+        .stderr(predicate::str::contains(
+            "use `rws workspace update` to modify it",
+        ));
 
     assert_eq!(
         fs::read_to_string(&manifest_path).unwrap(),
@@ -116,31 +131,146 @@ fn init_prompts_before_overwriting_existing_manifest_and_preserves_it_when_decli
 }
 
 #[test]
-fn init_overwrites_existing_manifest_after_confirmation() {
+fn workspace_update_adds_envrc_after_init() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");
+    let envrc = temp.path().join("envrc");
+    fs::write(&envrc, "export DIRENV_DISTROBOX=debian\n").unwrap();
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
         .success();
 
-    let manifest_path = workspace.join(".rws/rws.toml");
-    fs::write(&manifest_path, "custom = true\n").unwrap();
-
     bin()
-        .write_stdin("y\n")
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "update",
+            "--envrc",
+            envrc.to_str().unwrap(),
+        ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "workspace manifest already exists",
-        ))
-        .stdout(predicate::str::contains("initialized workspace at"));
+        .stdout(predicate::str::contains("updated workspace at"));
 
-    let manifest = fs::read_to_string(&manifest_path).unwrap();
-    assert_ne!(manifest, "custom = true\n");
-    assert!(manifest.contains("name = \"ws\""));
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/envrc")).unwrap(),
+        fs::read_to_string(workspace.join(".envrc")).unwrap()
+    );
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    assert!(manifest.contains("envrc = \".rws/envrc\""));
+}
+
+#[test]
+fn workspace_update_adds_common_justfile_after_init() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let common = temp.path().join("common.just");
+    fs::write(&common, "build:\n  @echo build\n").unwrap();
+
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
+        .assert()
+        .success();
+
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "update",
+            "--common-justfile",
+            common.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert!(workspace.join(".rws/justfile.common").is_file());
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    assert!(manifest.contains("common_justfile = \".rws/justfile.common\""));
+}
+
+#[test]
+fn workspace_update_removes_managed_envrc() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let envrc = temp.path().join("envrc");
+    fs::write(&envrc, "export DIRENV_DISTROBOX=debian\n").unwrap();
+
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+            "--envrc",
+            envrc.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "update",
+            "--no-envrc",
+        ])
+        .assert()
+        .success();
+
+    assert!(!workspace.join(".rws/envrc").exists());
+    assert!(!workspace.join(".envrc").exists());
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    assert!(!manifest.contains("envrc = \".rws/envrc\""));
+}
+
+#[test]
+fn workspace_update_removes_common_justfile() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let common = temp.path().join("common.just");
+    fs::write(&common, "build:\n  @echo build\n").unwrap();
+
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+            "--common-justfile",
+            common.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "update",
+            "--no-common-justfile",
+        ])
+        .assert()
+        .success();
+
+    assert!(!workspace.join(".rws/justfile.common").exists());
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    assert!(!manifest.contains("common_justfile = \".rws/justfile.common\""));
 }
 
 #[test]
@@ -152,13 +282,19 @@ fn add_sync_and_remove_manage_symlinks_and_root_justfile() {
     let camera = create_package(&packages_root, "camera", true);
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
         .success();
     bin()
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "package",
             "add",
             camera.to_str().unwrap(),
         ])
@@ -167,15 +303,22 @@ fn add_sync_and_remove_manage_symlinks_and_root_justfile() {
         .stdout(predicate::str::contains("added package `camera`"));
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "sync"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "sync",
+        ])
         .assert()
         .success();
 
     let link = workspace.join("src/camera");
-    assert!(fs::symlink_metadata(&link)
-        .unwrap()
-        .file_type()
-        .is_symlink());
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
     let justfile = fs::read_to_string(workspace.join("justfile")).unwrap();
     assert!(justfile.contains("mod camera 'src/camera/.rws/justfile'"));
 
@@ -183,13 +326,19 @@ fn add_sync_and_remove_manage_symlinks_and_root_justfile() {
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "package",
             "remove",
             "camera",
         ])
         .assert()
         .success();
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "sync"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "sync",
+        ])
         .assert()
         .success();
     assert!(!link.exists());
@@ -205,13 +354,19 @@ fn add_rejects_duplicate_module_names() {
     let second = create_package(&packages_root, "another", true);
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
         .success();
     bin()
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "package",
             "add",
             first.to_str().unwrap(),
             "--name",
@@ -223,6 +378,7 @@ fn add_rejects_duplicate_module_names() {
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "package",
             "add",
             second.to_str().unwrap(),
             "--name",
@@ -241,13 +397,19 @@ fn add_rejects_missing_source_path() {
     let workspace = temp.path().join("ws");
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
         .success();
     bin()
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "package",
             "add",
             temp.path().join("missing").to_str().unwrap(),
         ])
@@ -265,13 +427,19 @@ fn sync_refuses_to_overwrite_real_directory() {
     let camera = create_package(&packages_root, "camera", true);
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
         .success();
     bin()
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "package",
             "add",
             camera.to_str().unwrap(),
         ])
@@ -280,7 +448,12 @@ fn sync_refuses_to_overwrite_real_directory() {
     fs::create_dir_all(workspace.join("src/camera")).unwrap();
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "sync"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "sync",
+        ])
         .assert()
         .failure()
         .stderr(predicate::str::contains(
@@ -297,25 +470,41 @@ fn doctor_returns_zero_for_warnings_only() {
     let camera = create_package(&packages_root, "camera", false);
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
         .success();
     bin()
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "package",
             "add",
             camera.to_str().unwrap(),
         ])
         .assert()
         .success();
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "sync"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "sync",
+        ])
         .assert()
         .success();
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "doctor"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "doctor",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -332,20 +521,31 @@ fn sync_skips_modules_for_packages_without_justfiles() {
     let nav = create_package(&packages_root, "visual_nav", false);
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
         .success();
     bin()
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "package",
             "add",
             nav.to_str().unwrap(),
         ])
         .assert()
         .success();
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "sync"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "sync",
+        ])
         .assert()
         .success();
 
@@ -363,26 +563,42 @@ fn doctor_returns_non_zero_for_missing_source() {
     let camera = create_package(&packages_root, "camera", true);
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
         .success();
     bin()
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "package",
             "add",
             camera.to_str().unwrap(),
         ])
         .assert()
         .success();
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "sync"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "sync",
+        ])
         .assert()
         .success();
     fs::remove_dir_all(&camera).unwrap();
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "doctor"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "doctor",
+        ])
         .assert()
         .code(1)
         .stderr(predicate::str::contains("error: missing source path"));
@@ -399,6 +615,7 @@ fn sync_overwrites_root_envrc_from_managed_envrc() {
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "workspace",
             "init",
             "--envrc",
             envrc.to_str().unwrap(),
@@ -409,7 +626,12 @@ fn sync_overwrites_root_envrc_from_managed_envrc() {
     fs::write(workspace.join(".envrc"), "changed\n").unwrap();
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "sync"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "sync",
+        ])
         .assert()
         .success();
 
@@ -430,6 +652,7 @@ fn doctor_warns_when_root_envrc_differs() {
         .args([
             "--workspace",
             workspace.to_str().unwrap(),
+            "workspace",
             "init",
             "--envrc",
             envrc.to_str().unwrap(),
@@ -440,7 +663,12 @@ fn doctor_warns_when_root_envrc_differs() {
     fs::write(workspace.join(".envrc"), "changed\n").unwrap();
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "doctor"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "doctor",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -456,7 +684,12 @@ fn init_refuses_to_overwrite_non_generated_root_justfile() {
     fs::write(workspace.join("justfile"), "build:\n  @echo custom\n").unwrap();
 
     bin()
-        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "workspace",
+            "init",
+        ])
         .assert()
         .failure()
         .stderr(predicate::str::contains(

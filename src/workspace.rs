@@ -27,6 +27,14 @@ pub struct DoctorReport {
     pub errors: Vec<String>,
 }
 
+#[derive(Debug, Default)]
+pub struct WorkspaceUpdate {
+    pub common_justfile: Option<Utf8PathBuf>,
+    pub remove_common_justfile: bool,
+    pub envrc: Option<Utf8PathBuf>,
+    pub remove_envrc: bool,
+}
+
 pub fn init_workspace(
     workspace_root: &Utf8Path,
     common_justfile: Option<&Utf8Path>,
@@ -36,38 +44,37 @@ pub fn init_workspace(
     ensure_dir(&workspace_root.join("src"))?;
     ensure_dir(&workspace_root.join(MANIFEST_DIR))?;
 
+    let manifest_path = manifest_path(workspace_root);
+    if path_exists(&manifest_path) {
+        bail!(RwsError::WorkspaceAlreadyInitialized(manifest_path));
+    }
+
     let root_justfile = workspace_root.join("justfile");
     ensure_generated_justfile_can_be_written(&root_justfile)?;
-
-    let common_manifest_path = if let Some(common_source) = common_justfile {
-        if !path_exists(common_source) {
-            bail!(RwsError::MissingPath(common_source.to_path_buf()));
-        }
-        let destination = workspace_root.join(COMMON_JUSTFILE);
-        copy_file(common_source, &destination)?;
-        Some(Utf8PathBuf::from(COMMON_JUSTFILE))
-    } else {
-        None
-    };
-
-    let envrc_manifest_path = if let Some(envrc_source) = envrc {
-        if !path_exists(envrc_source) {
-            bail!(RwsError::MissingPath(envrc_source.to_path_buf()));
-        }
-        let stored_envrc = workspace_root.join(WORKSPACE_ENVRC);
-        copy_file(envrc_source, &stored_envrc)?;
-        copy_file(&stored_envrc, &workspace_root.join(".envrc"))?;
-        Some(Utf8PathBuf::from(WORKSPACE_ENVRC))
-    } else {
-        None
-    };
 
     let name = workspace_root
         .file_name()
         .filter(|name| !name.is_empty())
         .unwrap_or("workspace")
         .to_string();
-    let manifest = Manifest::new(name, common_manifest_path, envrc_manifest_path);
+    let mut manifest = Manifest::new(name, None, None);
+    apply_workspace_file_updates(
+        workspace_root,
+        &mut manifest,
+        WorkspaceUpdate {
+            common_justfile: common_justfile.map(Utf8Path::to_path_buf),
+            remove_common_justfile: false,
+            envrc: envrc.map(Utf8Path::to_path_buf),
+            remove_envrc: false,
+        },
+    )?;
+    manifest.save(&manifest_path)?;
+    generate_and_write_justfile(workspace_root, &manifest)
+}
+
+pub fn update_workspace(workspace_root: &Utf8Path, update: WorkspaceUpdate) -> Result<()> {
+    let mut manifest = load_manifest(workspace_root)?;
+    apply_workspace_file_updates(workspace_root, &mut manifest, update)?;
     manifest.save(&manifest_path(workspace_root))?;
     generate_and_write_justfile(workspace_root, &manifest)
 }
@@ -285,6 +292,65 @@ fn ensure_generated_justfile_can_be_written(path: &Utf8Path) -> Result<()> {
         Ok(())
     } else {
         bail!(RwsError::PathConflict(path.to_path_buf()));
+    }
+}
+
+fn apply_workspace_file_updates(
+    workspace_root: &Utf8Path,
+    manifest: &mut Manifest,
+    update: WorkspaceUpdate,
+) -> Result<()> {
+    if let Some(common_source) = update.common_justfile.as_deref() {
+        copy_managed_file(workspace_root, common_source, COMMON_JUSTFILE)?;
+        manifest.workspace.common_justfile = Some(Utf8PathBuf::from(COMMON_JUSTFILE));
+    } else if update.remove_common_justfile {
+        remove_managed_file(workspace_root, COMMON_JUSTFILE)?;
+        manifest.workspace.common_justfile = None;
+    }
+
+    if let Some(envrc_source) = update.envrc.as_deref() {
+        copy_managed_file(workspace_root, envrc_source, WORKSPACE_ENVRC)?;
+        copy_file(
+            &workspace_root.join(WORKSPACE_ENVRC),
+            &workspace_root.join(".envrc"),
+        )?;
+        manifest.workspace.envrc = Some(Utf8PathBuf::from(WORKSPACE_ENVRC));
+    } else if update.remove_envrc {
+        remove_managed_file(workspace_root, WORKSPACE_ENVRC)?;
+        remove_root_envrc(workspace_root)?;
+        manifest.workspace.envrc = None;
+    }
+
+    Ok(())
+}
+
+fn copy_managed_file(
+    workspace_root: &Utf8Path,
+    source: &Utf8Path,
+    destination: &str,
+) -> Result<()> {
+    if !path_exists(source) {
+        bail!(RwsError::MissingPath(source.to_path_buf()));
+    }
+
+    copy_file(source, &workspace_root.join(destination))
+}
+
+fn remove_managed_file(workspace_root: &Utf8Path, path: &str) -> Result<()> {
+    let path = workspace_root.join(path);
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| format!("failed to remove managed file {path}")),
+    }
+}
+
+fn remove_root_envrc(workspace_root: &Utf8Path) -> Result<()> {
+    let path = workspace_root.join(".envrc");
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| format!("failed to remove root envrc {path}")),
     }
 }
 

@@ -30,12 +30,20 @@ camera/
 ## Usage
 
 ```bash
-rws init --workspace ~/ws/my_robot --common-justfile path/to/common.just --envrc path/to/.envrc
-rws add ~/dev/robot/camera
-rws add ~/dev/robot/lidar
-rws sync
+rws workspace init --workspace ~/ws/my_robot
+rws workspace update --workspace ~/ws/my_robot --common-justfile path/to/common.just --envrc path/to/.envrc
+rws package add --workspace ~/ws/my_robot ~/dev/robot/camera
+rws package add --workspace ~/ws/my_robot ~/dev/robot/lidar
+rws workspace sync --workspace ~/ws/my_robot
 just camera start
 just lidar start
+```
+
+To remove managed workspace files later:
+
+```bash
+rws workspace update --workspace ~/ws/my_robot --no-common-justfile
+rws workspace update --workspace ~/ws/my_robot --no-envrc
 ```
 
 The generated root `justfile` imports `.rws/justfile.common` when configured
