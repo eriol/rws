@@ -5,6 +5,10 @@ use crate::workspace;
 
 pub fn run(cli: Cli) -> Result<u8> {
     match cli.command {
+        Command::Version => {
+            println!("rws {}", env!("CARGO_PKG_VERSION"));
+            Ok(0)
+        }
         Command::Init(args) => {
             workspace::init_workspace(
                 &cli.workspace,

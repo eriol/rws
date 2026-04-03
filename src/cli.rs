@@ -12,6 +12,7 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    Version,
     Init(WorkspaceFilesArgs),
     Update(WorkspaceUpdateArgs),
     List,
