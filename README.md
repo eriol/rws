@@ -27,6 +27,12 @@ camera/
     justfile
 ```
 
+## Install
+
+```
+cargo install --branch main --git https://noa.mornie.org/eriol/rws
+```
+
 ## Usage
 
 ```bash
