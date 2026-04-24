@@ -38,8 +38,7 @@ cargo install --branch main --git https://noa.mornie.org/eriol/rws
 ```bash
 rws init --workspace ~/ws/my_robot
 rws update --workspace ~/ws/my_robot --common-justfile path/to/common.just --envrc path/to/.envrc
-rws package add --workspace ~/ws/my_robot ~/dev/robot/camera
-rws package add --workspace ~/ws/my_robot ~/dev/robot/lidar
+rws package add --workspace ~/ws/my_robot ~/dev/robot/camera ~/dev/robot/lidar
 rws sync --workspace ~/ws/my_robot
 just camera start
 just lidar start

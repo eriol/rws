@@ -57,9 +57,10 @@ pub fn run(cli: Cli) -> Result<u8> {
             }
         }
         Command::Package { command } => match command {
-            PackageCommand::Add { source, name } => {
-                let package = workspace::add_package(&cli.workspace, &source, name.as_deref())?;
-                println!("added package `{}` from {}", package.name, package.source);
+            PackageCommand::Add { sources } => {
+                for package in workspace::add_packages(&cli.workspace, &sources)? {
+                    println!("added package `{}` from {}", package.name, package.source);
+                }
                 Ok(0)
             }
             PackageCommand::Remove { name } => {

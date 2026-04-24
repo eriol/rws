@@ -22,6 +22,25 @@ fn create_package(root: &std::path::Path, name: &str, with_justfile: bool) -> st
     path
 }
 
+fn create_package_with_ros_name(
+    root: &std::path::Path,
+    dir_name: &str,
+    package_name: &str,
+    with_justfile: bool,
+) -> std::path::PathBuf {
+    let path = root.join(dir_name);
+    fs::create_dir_all(path.join(".rws")).unwrap();
+    fs::write(
+        path.join("package.xml"),
+        format!("<package><name>{package_name}</name></package>"),
+    )
+    .unwrap();
+    if with_justfile {
+        fs::write(path.join(".rws/justfile"), "start:\n  @echo start\n").unwrap();
+    }
+    path
+}
+
 #[test]
 fn init_creates_workspace_and_generated_justfile() {
     let temp = TempDir::new().unwrap();
@@ -295,13 +314,43 @@ fn add_sync_and_remove_manage_symlinks_and_root_justfile() {
 }
 
 #[test]
+fn add_accepts_multiple_paths_in_one_command() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let packages_root = temp.path().join("pkgs");
+    fs::create_dir_all(&packages_root).unwrap();
+    let camera = create_package(&packages_root, "camera", true);
+    let lidar = create_package(&packages_root, "lidar", true);
+
+    bin()
+        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .assert()
+        .success();
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "package",
+            "add",
+            camera.to_str().unwrap(),
+            lidar.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    assert!(manifest.contains("name = \"camera\""));
+    assert!(manifest.contains("name = \"lidar\""));
+}
+
+#[test]
 fn add_rejects_duplicate_module_names() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");
     let packages_root = temp.path().join("pkgs");
     fs::create_dir_all(&packages_root).unwrap();
-    let first = create_package(&packages_root, "camera", true);
-    let second = create_package(&packages_root, "another", true);
+    let first = create_package_with_ros_name(&packages_root, "camera_a", "robot_cam", true);
+    let second = create_package_with_ros_name(&packages_root, "camera_b", "robot_cam", true);
 
     bin()
         .args(["--workspace", workspace.to_str().unwrap(), "init"])
@@ -314,20 +363,7 @@ fn add_rejects_duplicate_module_names() {
             "package",
             "add",
             first.to_str().unwrap(),
-            "--name",
-            "robot_cam",
-        ])
-        .assert()
-        .success();
-    bin()
-        .args([
-            "--workspace",
-            workspace.to_str().unwrap(),
-            "package",
-            "add",
             second.to_str().unwrap(),
-            "--name",
-            "robot_cam",
         ])
         .assert()
         .failure()
@@ -356,6 +392,36 @@ fn add_rejects_missing_source_path() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("path does not exist"));
+}
+
+#[test]
+fn add_is_atomic_when_one_source_is_missing() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let packages_root = temp.path().join("pkgs");
+    fs::create_dir_all(&packages_root).unwrap();
+    let camera = create_package(&packages_root, "camera", true);
+    let missing = temp.path().join("missing");
+
+    bin()
+        .args(["--workspace", workspace.to_str().unwrap(), "init"])
+        .assert()
+        .success();
+    bin()
+        .args([
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "package",
+            "add",
+            camera.to_str().unwrap(),
+            missing.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("path does not exist"));
+
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    assert!(!manifest.contains("name = \"camera\""));
 }
 
 #[test]

@@ -27,9 +27,8 @@ pub enum Command {
 #[derive(Debug, Subcommand)]
 pub enum PackageCommand {
     Add {
-        source: Utf8PathBuf,
-        #[arg(long)]
-        name: Option<String>,
+        #[arg(required = true)]
+        sources: Vec<Utf8PathBuf>,
     },
     Remove {
         name: String,

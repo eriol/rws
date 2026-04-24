@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 
 use anyhow::{Context, Result, bail};
@@ -87,33 +88,42 @@ pub fn load_manifest(workspace_root: &Utf8Path) -> Result<Manifest> {
     Manifest::load(&path)
 }
 
-pub fn add_package(
+pub fn add_packages(
     workspace_root: &Utf8Path,
-    source: &Utf8Path,
-    explicit_name: Option<&str>,
-) -> Result<PackageEntry> {
-    if !path_exists(source) {
-        bail!(RwsError::MissingPath(source.to_path_buf()));
-    }
-
+    sources: &[Utf8PathBuf],
+) -> Result<Vec<PackageEntry>> {
     let mut manifest = load_manifest(workspace_root)?;
-    let canonical_source = canonicalize_utf8(source)?;
-    let resolved_name = resolve_package_name(&canonical_source, explicit_name)?;
-    validate_package_name(&resolved_name)?;
-    if manifest.has_package(&resolved_name) {
-        bail!(RwsError::DuplicatePackageName(resolved_name));
+    let mut seen_names = manifest
+        .packages
+        .iter()
+        .map(|package| package.name.clone())
+        .collect::<BTreeSet<_>>();
+    let mut new_packages = Vec::with_capacity(sources.len());
+
+    for source in sources {
+        if !path_exists(source) {
+            bail!(RwsError::MissingPath(source.to_path_buf()));
+        }
+
+        let canonical_source = canonicalize_utf8(source)?;
+        let resolved_name = resolve_package_name(&canonical_source)?;
+        validate_package_name(&resolved_name)?;
+        if !seen_names.insert(resolved_name.clone()) {
+            bail!(RwsError::DuplicatePackageName(resolved_name));
+        }
+
+        new_packages.push(PackageEntry {
+            name: resolved_name.clone(),
+            source: canonical_source,
+            link: Utf8PathBuf::from(format!("src/{resolved_name}")),
+            justfile: Utf8PathBuf::from(PACKAGE_JUSTFILE),
+            enabled: true,
+        });
     }
 
-    let package = PackageEntry {
-        name: resolved_name.clone(),
-        source: canonical_source,
-        link: Utf8PathBuf::from(format!("src/{resolved_name}")),
-        justfile: Utf8PathBuf::from(PACKAGE_JUSTFILE),
-        enabled: true,
-    };
-    manifest.packages.push(package.clone());
+    manifest.packages.extend(new_packages.iter().cloned());
     manifest.save(&manifest_path(workspace_root))?;
-    Ok(package)
+    Ok(new_packages)
 }
 
 pub fn remove_package(workspace_root: &Utf8Path, name: &str) -> Result<()> {
@@ -265,10 +275,8 @@ pub fn generate_and_write_justfile(workspace_root: &Utf8Path, manifest: &Manifes
     write_atomic(&justfile_path, &contents)
 }
 
-fn resolve_package_name(source: &Utf8Path, explicit_name: Option<&str>) -> Result<String> {
-    let name = if let Some(name) = explicit_name {
-        name.to_string()
-    } else if let Some(name) = detect_package_name(source)? {
+fn resolve_package_name(source: &Utf8Path) -> Result<String> {
+    let name = if let Some(name) = detect_package_name(source)? {
         name
     } else {
         source
