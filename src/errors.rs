@@ -7,6 +7,8 @@ pub enum RwsError {
     WorkspaceAlreadyInitialized(Utf8PathBuf),
     #[error("workspace manifest not found at {0}")]
     MissingManifest(Utf8PathBuf),
+    #[error("rws workspace not found from {0}; run `rws init <path>` first")]
+    WorkspaceNotFound(Utf8PathBuf),
     #[error("invalid package name `{name}`: only letters, digits, and underscores are allowed")]
     InvalidPackageName { name: String },
     #[error("duplicate package name `{0}`")]

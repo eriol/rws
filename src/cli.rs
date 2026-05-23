@@ -4,8 +4,6 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(name = "rws", about = "Manage ROS workspaces and justfile modules")]
 pub struct Cli {
-    #[arg(long, global = true, default_value = ".")]
-    pub workspace: Utf8PathBuf,
     #[command(subcommand)]
     pub command: Command,
 }
@@ -13,7 +11,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Version,
-    Init(WorkspaceFilesArgs),
+    Init(InitArgs),
     Update(WorkspaceUpdateArgs),
     List,
     Sync,
@@ -36,7 +34,8 @@ pub enum PackageCommand {
 }
 
 #[derive(Debug, Args)]
-pub struct WorkspaceFilesArgs {
+pub struct InitArgs {
+    pub workspace: Utf8PathBuf,
     #[arg(long)]
     pub common_justfile: Option<Utf8PathBuf>,
     #[arg(long)]

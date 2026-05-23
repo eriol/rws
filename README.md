@@ -36,19 +36,23 @@ cargo install --branch main --git https://noa.mornie.org/eriol/rws
 ## Usage
 
 ```bash
-rws init --workspace ~/ws/my_robot
-rws update --workspace ~/ws/my_robot --common-justfile path/to/common.just --envrc path/to/.envrc
-rws package add --workspace ~/ws/my_robot ~/dev/robot/camera ~/dev/robot/lidar
-rws sync --workspace ~/ws/my_robot
+rws init ~/ws/my_robot
+cd ~/ws/my_robot
+rws update --common-justfile path/to/common.just --envrc path/to/.envrc
+rws package add ~/dev/robot/camera ~/dev/robot/lidar
+rws sync
 just camera start
 just lidar start
 ```
 
+After `init`, rws commands can run from the workspace root or any
+subdirectory. rws finds the workspace by walking up to `.rws/rws.toml`.
+
 To remove managed workspace files later:
 
 ```bash
-rws update --workspace ~/ws/my_robot --no-common-justfile
-rws update --workspace ~/ws/my_robot --no-envrc
+rws update --no-common-justfile
+rws update --no-envrc
 ```
 
 The generated root `justfile` imports `.rws/justfile.common` when configured
