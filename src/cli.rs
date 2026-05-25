@@ -1,5 +1,5 @@
 use camino::Utf8PathBuf;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
 #[command(name = "rws", about = "Manage ROS workspaces and justfile modules")]
@@ -16,6 +16,9 @@ pub enum Command {
     List,
     Sync,
     Doctor,
+    Completion {
+        shell: CompletionShell,
+    },
     Package {
         #[command(subcommand)]
         command: PackageCommand,
@@ -31,6 +34,12 @@ pub enum PackageCommand {
     Remove {
         name: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
 }
 
 #[derive(Debug, Args)]

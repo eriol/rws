@@ -1,7 +1,9 @@
 use anyhow::Result;
 use camino::Utf8PathBuf;
+use clap::CommandFactory;
+use clap_complete::{Shell, generate};
 
-use crate::cli::{Cli, Command, PackageCommand, WorkspaceUpdateArgs};
+use crate::cli::{Cli, Command, CompletionShell, PackageCommand, WorkspaceUpdateArgs};
 use crate::errors::RwsError;
 use crate::fs_utils::{path_exists, utf8_from_path_buf};
 use crate::manifest::manifest_path;
@@ -64,6 +66,16 @@ pub fn run(cli: Cli) -> Result<u8> {
                 Ok(1)
             }
         }
+        Command::Completion { shell } => {
+            let mut command = Cli::command();
+            generate(
+                completion_shell(shell),
+                &mut command,
+                "rws",
+                &mut std::io::stdout(),
+            );
+            Ok(0)
+        }
         Command::Package { command } => match command {
             PackageCommand::Add { sources } => {
                 let workspace_root = discover_workspace_root()?;
@@ -82,6 +94,13 @@ pub fn run(cli: Cli) -> Result<u8> {
                 Ok(0)
             }
         },
+    }
+}
+
+fn completion_shell(shell: CompletionShell) -> Shell {
+    match shell {
+        CompletionShell::Bash => Shell::Bash,
+        CompletionShell::Zsh => Shell::Zsh,
     }
 }
 

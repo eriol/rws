@@ -42,6 +42,24 @@ fn create_package_with_ros_name(
 }
 
 #[test]
+fn completion_generates_bash_script() {
+    bin()
+        .args(["completion", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("_rws"));
+}
+
+#[test]
+fn completion_generates_zsh_script() {
+    bin()
+        .args(["completion", "zsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("#compdef rws"));
+}
+
+#[test]
 fn init_creates_workspace_and_generated_justfile() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");
