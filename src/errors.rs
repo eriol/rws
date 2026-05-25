@@ -1,3 +1,5 @@
+use std::fmt;
+
 use camino::Utf8PathBuf;
 use thiserror::Error;
 
@@ -13,8 +15,8 @@ pub enum RwsError {
     InvalidPackageName { name: String },
     #[error("duplicate package name `{0}`")]
     DuplicatePackageName(String),
-    #[error("package `{0}` not found in manifest")]
-    MissingPackage(String),
+    #[error("{0}")]
+    MissingPackage(MissingPackageError),
     #[error("path does not exist: {0}")]
     MissingPath(Utf8PathBuf),
     #[error("refusing to overwrite existing non-symlink path: {0}")]
@@ -25,4 +27,26 @@ pub enum RwsError {
         actual: Utf8PathBuf,
         expected: Utf8PathBuf,
     },
+}
+
+#[derive(Debug)]
+pub struct MissingPackageError {
+    pub name: String,
+    pub available: Vec<String>,
+}
+
+impl fmt::Display for MissingPackageError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "package `{}` not found in manifest; ", self.name)?;
+
+        if self.available.is_empty() {
+            write!(formatter, "no packages are registered")
+        } else {
+            write!(
+                formatter,
+                "available packages: {}",
+                self.available.join(", ")
+            )
+        }
+    }
 }

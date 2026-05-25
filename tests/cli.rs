@@ -313,6 +313,60 @@ fn add_accepts_multiple_paths_in_one_command() {
 }
 
 #[test]
+fn remove_missing_package_lists_available_package_names() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let packages_root = temp.path().join("pkgs");
+    fs::create_dir_all(&packages_root).unwrap();
+    let camera = create_package(&packages_root, "camera", true);
+    let lidar = create_package(&packages_root, "lidar", true);
+
+    bin()
+        .args(["init", workspace.to_str().unwrap()])
+        .assert()
+        .success();
+    bin()
+        .current_dir(&workspace)
+        .args([
+            "package",
+            "add",
+            camera.to_str().unwrap(),
+            lidar.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    bin()
+        .current_dir(&workspace)
+        .args(["package", "remove", "typo"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "package `typo` not found in manifest; available packages: camera, lidar",
+        ));
+}
+
+#[test]
+fn remove_missing_package_reports_empty_manifest() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+
+    bin()
+        .args(["init", workspace.to_str().unwrap()])
+        .assert()
+        .success();
+
+    bin()
+        .current_dir(&workspace)
+        .args(["package", "remove", "typo"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "package `typo` not found in manifest; no packages are registered",
+        ));
+}
+
+#[test]
 fn add_rejects_duplicate_module_names() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");

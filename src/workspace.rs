@@ -4,7 +4,7 @@ use std::fs;
 use anyhow::{Context, Result, bail};
 use camino::{Utf8Path, Utf8PathBuf};
 
-use crate::errors::RwsError;
+use crate::errors::{MissingPackageError, RwsError};
 use crate::fs_utils::{canonicalize_utf8, copy_file, ensure_dir, path_exists, write_atomic};
 use crate::justfile::generate_root_justfile;
 use crate::linker::{SyncReport, sync_links};
@@ -130,7 +130,17 @@ pub fn remove_package(workspace_root: &Utf8Path, name: &str) -> Result<()> {
     let mut manifest = load_manifest(workspace_root)?;
     let normalized = normalize_package_name(name);
     if !manifest.remove_package(&normalized) {
-        bail!(RwsError::MissingPackage(normalized));
+        let mut available = manifest
+            .packages
+            .iter()
+            .map(|package| package.name.clone())
+            .collect::<Vec<_>>();
+        available.sort();
+
+        bail!(RwsError::MissingPackage(MissingPackageError {
+            name: normalized,
+            available,
+        }));
     }
     manifest.save(&manifest_path(workspace_root))
 }
