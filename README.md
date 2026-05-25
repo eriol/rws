@@ -1,9 +1,9 @@
 # rws
 
-`rws` manages a ROS workspace by registering external packages, linking them
-into `src/`, and generating a root `justfile` that exposes each package as a
-module. You can also provide a `envrc` that will be exposed at the root of the
-workspace.
+`rws` is an opinionated tool to manage a ROS workspace by registering external
+packages, linking them into `src/`, and generating a root `justfile` that
+exposes each package as a module. You can also provide a `envrc` that will be
+exposed at the root of the workspace.
 
 The final workspace layout is:
 
@@ -33,6 +33,26 @@ camera/
 cargo install --branch main --git https://noa.mornie.org/eriol/rws
 ```
 
+### Shell Completion
+
+After installing `rws`, shell completions can be installed for Bash or Zsh.
+
+For Bash:
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+rws completion bash > ~/.local/share/bash-completion/completions/rws
+```
+
+For Zsh:
+
+```bash
+mkdir -p ~/.zfunc
+rws completion zsh > ~/.zfunc/_rws
+```
+
+Make sure `~/.zfunc` is in your `fpath` for Zsh.
+
 ## Usage
 
 ```bash
@@ -53,14 +73,4 @@ To remove managed workspace files later:
 ```bash
 rws update --no-common-justfile
 rws update --no-envrc
-```
-
-The generated root `justfile` imports `.rws/justfile.common` when configured
-and adds one module per package:
-
-```just
-import '.rws/justfile.common'
-
-mod camera 'src/camera/.rws/justfile'
-mod lidar 'src/lidar/.rws/justfile'
 ```
