@@ -122,6 +122,31 @@ fn init_copies_envrc_into_dot_rws_and_root() {
 }
 
 #[test]
+fn init_copies_dependencies_repos_into_dot_rws_and_root() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let dependencies_repos = temp.path().join("dependencies.repos");
+    fs::write(&dependencies_repos, "repositories:\n").unwrap();
+
+    bin()
+        .args([
+            "init",
+            workspace.to_str().unwrap(),
+            "--dependencies-repos",
+            dependencies_repos.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/dependencies.repos")).unwrap(),
+        fs::read_to_string(workspace.join("dependencies.repos")).unwrap()
+    );
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    assert!(manifest.contains("dependencies_repos = \".rws/dependencies.repos\""));
+}
+
+#[test]
 fn init_rejects_existing_manifest_and_points_to_update() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");
@@ -174,6 +199,36 @@ fn workspace_update_adds_envrc_after_init() {
 }
 
 #[test]
+fn workspace_update_adds_dependencies_repos_after_init() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let dependencies_repos = temp.path().join("dependencies.repos");
+    fs::write(&dependencies_repos, "repositories:\n").unwrap();
+
+    bin()
+        .args(["init", workspace.to_str().unwrap()])
+        .assert()
+        .success();
+
+    bin()
+        .current_dir(&workspace)
+        .args([
+            "update",
+            "--dependencies-repos",
+            dependencies_repos.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/dependencies.repos")).unwrap(),
+        fs::read_to_string(workspace.join("dependencies.repos")).unwrap()
+    );
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    assert!(manifest.contains("dependencies_repos = \".rws/dependencies.repos\""));
+}
+
+#[test]
 fn workspace_update_adds_common_justfile_after_init() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");
@@ -223,6 +278,35 @@ fn workspace_update_removes_managed_envrc() {
     assert!(!workspace.join(".envrc").exists());
     let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
     assert!(!manifest.contains("envrc = \".rws/envrc\""));
+}
+
+#[test]
+fn workspace_update_removes_managed_dependencies_repos() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let dependencies_repos = temp.path().join("dependencies.repos");
+    fs::write(&dependencies_repos, "repositories:\n").unwrap();
+
+    bin()
+        .args([
+            "init",
+            workspace.to_str().unwrap(),
+            "--dependencies-repos",
+            dependencies_repos.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    bin()
+        .current_dir(&workspace)
+        .args(["update", "--no-dependencies-repos"])
+        .assert()
+        .success();
+
+    assert!(!workspace.join(".rws/dependencies.repos").exists());
+    assert!(!workspace.join("dependencies.repos").exists());
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    assert!(!manifest.contains("dependencies_repos = \".rws/dependencies.repos\""));
 }
 
 #[test]
@@ -616,6 +700,37 @@ fn sync_overwrites_root_envrc_from_managed_envrc() {
 }
 
 #[test]
+fn sync_overwrites_root_dependencies_repos_from_managed_dependencies_repos() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let dependencies_repos = temp.path().join("dependencies.repos");
+    fs::write(&dependencies_repos, "repositories:\n").unwrap();
+
+    bin()
+        .args([
+            "init",
+            workspace.to_str().unwrap(),
+            "--dependencies-repos",
+            dependencies_repos.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    fs::write(workspace.join("dependencies.repos"), "changed\n").unwrap();
+
+    bin()
+        .current_dir(&workspace)
+        .args(["sync"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/dependencies.repos")).unwrap(),
+        fs::read_to_string(workspace.join("dependencies.repos")).unwrap()
+    );
+}
+
+#[test]
 fn doctor_warns_when_root_envrc_differs() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");
@@ -641,6 +756,35 @@ fn doctor_warns_when_root_envrc_differs() {
         .success()
         .stdout(predicate::str::contains(
             "warning: root envrc differs from managed envrc source",
+        ));
+}
+
+#[test]
+fn doctor_warns_when_root_dependencies_repos_differs() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let dependencies_repos = temp.path().join("dependencies.repos");
+    fs::write(&dependencies_repos, "repositories:\n").unwrap();
+
+    bin()
+        .args([
+            "init",
+            workspace.to_str().unwrap(),
+            "--dependencies-repos",
+            dependencies_repos.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    fs::write(workspace.join("dependencies.repos"), "changed\n").unwrap();
+
+    bin()
+        .current_dir(&workspace)
+        .args(["doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "warning: root dependencies.repos differs from managed dependencies.repos source",
         ));
 }
 

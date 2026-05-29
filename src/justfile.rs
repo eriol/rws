@@ -67,6 +67,7 @@ mod tests {
                 src_dir: "src".into(),
                 common_justfile: Some(".rws/justfile.common".into()),
                 envrc: None,
+                dependencies_repos: None,
             },
             packages: vec![
                 PackageEntry {
@@ -123,6 +124,7 @@ mod tests {
                 src_dir: "src".into(),
                 common_justfile: None,
                 envrc: None,
+                dependencies_repos: None,
             },
             packages: vec![
                 PackageEntry {

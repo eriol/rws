@@ -9,8 +9,8 @@ use crate::fs_utils::{canonicalize_utf8, copy_file, ensure_dir, path_exists, wri
 use crate::justfile::generate_root_justfile;
 use crate::linker::{SyncReport, sync_links};
 use crate::manifest::{
-    COMMON_JUSTFILE, MANIFEST_DIR, Manifest, PACKAGE_JUSTFILE, PackageEntry, WORKSPACE_ENVRC,
-    manifest_path, normalize_package_name, validate_package_name,
+    COMMON_JUSTFILE, DEPENDENCIES_REPOS, MANIFEST_DIR, Manifest, PACKAGE_JUSTFILE, PackageEntry,
+    WORKSPACE_ENVRC, manifest_path, normalize_package_name, validate_package_name,
 };
 use crate::ros::detect_package_name;
 
@@ -34,12 +34,15 @@ pub struct WorkspaceUpdate {
     pub remove_common_justfile: bool,
     pub envrc: Option<Utf8PathBuf>,
     pub remove_envrc: bool,
+    pub dependencies_repos: Option<Utf8PathBuf>,
+    pub remove_dependencies_repos: bool,
 }
 
 pub fn init_workspace(
     workspace_root: &Utf8Path,
     common_justfile: Option<&Utf8Path>,
     envrc: Option<&Utf8Path>,
+    dependencies_repos: Option<&Utf8Path>,
 ) -> Result<()> {
     ensure_dir(workspace_root)?;
     ensure_dir(&workspace_root.join("src"))?;
@@ -58,7 +61,7 @@ pub fn init_workspace(
         .filter(|name| !name.is_empty())
         .unwrap_or("workspace")
         .to_string();
-    let mut manifest = Manifest::new(name, None, None);
+    let mut manifest = Manifest::new(name, None, None, None);
     apply_workspace_file_updates(
         workspace_root,
         &mut manifest,
@@ -67,6 +70,8 @@ pub fn init_workspace(
             remove_common_justfile: false,
             envrc: envrc.map(Utf8Path::to_path_buf),
             remove_envrc: false,
+            dependencies_repos: dependencies_repos.map(Utf8Path::to_path_buf),
+            remove_dependencies_repos: false,
         },
     )?;
     manifest.save(&manifest_path)?;
@@ -168,6 +173,7 @@ pub fn sync_workspace(workspace_root: &Utf8Path) -> Result<SyncReport> {
     let manifest = load_manifest(workspace_root)?;
     let report = sync_links(workspace_root, &manifest)?;
     sync_envrc(workspace_root, &manifest)?;
+    sync_dependencies_repos(workspace_root, &manifest)?;
     generate_and_write_justfile(workspace_root, &manifest)?;
     Ok(report)
 }
@@ -219,6 +225,33 @@ pub fn doctor_workspace(workspace_root: &Utf8Path) -> Result<DoctorReport> {
                     report.warnings.push(format!(
                         "root envrc differs from managed envrc source: {}",
                         root_envrc
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Some(dependencies_repos) = &manifest.workspace.dependencies_repos {
+        let stored_dependencies_repos = workspace_root.join(dependencies_repos);
+        if !stored_dependencies_repos.exists() {
+            report.warnings.push(format!(
+                "missing managed dependencies.repos source: {stored_dependencies_repos}"
+            ));
+        } else {
+            let root_dependencies_repos = workspace_root.join("dependencies.repos");
+            if !root_dependencies_repos.exists() {
+                report.warnings.push(format!(
+                    "missing root dependencies.repos: {root_dependencies_repos}"
+                ));
+            } else {
+                let stored_contents = fs::read_to_string(&stored_dependencies_repos)
+                    .with_context(|| format!("failed to read {stored_dependencies_repos}"))?;
+                let root_contents = fs::read_to_string(&root_dependencies_repos)
+                    .with_context(|| format!("failed to read {root_dependencies_repos}"))?;
+                if stored_contents != root_contents {
+                    report.warnings.push(format!(
+                        "root dependencies.repos differs from managed dependencies.repos source: {}",
+                        root_dependencies_repos
                     ));
                 }
             }
@@ -339,6 +372,23 @@ fn apply_workspace_file_updates(
         manifest.workspace.envrc = None;
     }
 
+    if let Some(dependencies_repos_source) = update.dependencies_repos.as_deref() {
+        copy_managed_file(
+            workspace_root,
+            dependencies_repos_source,
+            DEPENDENCIES_REPOS,
+        )?;
+        copy_file(
+            &workspace_root.join(DEPENDENCIES_REPOS),
+            &workspace_root.join("dependencies.repos"),
+        )?;
+        manifest.workspace.dependencies_repos = Some(Utf8PathBuf::from(DEPENDENCIES_REPOS));
+    } else if update.remove_dependencies_repos {
+        remove_managed_file(workspace_root, DEPENDENCIES_REPOS)?;
+        remove_root_dependencies_repos(workspace_root)?;
+        manifest.workspace.dependencies_repos = None;
+    }
+
     Ok(())
 }
 
@@ -372,6 +422,17 @@ fn remove_root_envrc(workspace_root: &Utf8Path) -> Result<()> {
     }
 }
 
+fn remove_root_dependencies_repos(workspace_root: &Utf8Path) -> Result<()> {
+    let path = workspace_root.join("dependencies.repos");
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => {
+            Err(error).with_context(|| format!("failed to remove root dependencies.repos {path}"))
+        }
+    }
+}
+
 fn sync_envrc(workspace_root: &Utf8Path, manifest: &Manifest) -> Result<()> {
     let Some(envrc) = &manifest.workspace.envrc else {
         return Ok(());
@@ -383,4 +444,17 @@ fn sync_envrc(workspace_root: &Utf8Path, manifest: &Manifest) -> Result<()> {
     }
 
     copy_file(&source, &workspace_root.join(".envrc"))
+}
+
+fn sync_dependencies_repos(workspace_root: &Utf8Path, manifest: &Manifest) -> Result<()> {
+    let Some(dependencies_repos) = &manifest.workspace.dependencies_repos else {
+        return Ok(());
+    };
+
+    let source = workspace_root.join(dependencies_repos);
+    if !source.exists() {
+        return Ok(());
+    }
+
+    copy_file(&source, &workspace_root.join("dependencies.repos"))
 }

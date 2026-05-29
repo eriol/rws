@@ -2,8 +2,8 @@
 
 `rws` is an opinionated tool to manage a ROS workspace by registering external
 packages, linking them into `src/`, and generating a root `justfile` that
-exposes each package as a module. You can also provide a `envrc` that will be
-exposed at the root of the workspace.
+exposes each package as a module. You can also provide a `envrc` and
+`dependencies.repos` that will be exposed at the root of the workspace.
 
 The final workspace layout is:
 
@@ -14,8 +14,10 @@ workspace/
     rws.toml
     justfile.common
     envrc
+    dependencies.repos
   justfile
   .envrc
+  dependencies.repos
 ```
 
 Each package can provide its own justfile at `.rws/justfile`:
@@ -58,7 +60,7 @@ Make sure `~/.zfunc` is in your `fpath` for Zsh.
 ```bash
 rws init ~/ws/my_robot
 cd ~/ws/my_robot
-rws update --common-justfile path/to/common.just --envrc path/to/.envrc
+rws update --common-justfile path/to/common.just --envrc path/to/.envrc --dependencies-repos path/to/dependencies.repos
 rws package add ~/dev/robot/camera ~/dev/robot/lidar
 rws sync
 just camera start
@@ -73,4 +75,5 @@ To remove managed workspace files later:
 ```bash
 rws update --no-common-justfile
 rws update --no-envrc
+rws update --no-dependencies-repos
 ```

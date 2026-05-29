@@ -49,11 +49,14 @@ pub struct InitArgs {
     pub common_justfile: Option<Utf8PathBuf>,
     #[arg(long)]
     pub envrc: Option<Utf8PathBuf>,
+    #[arg(long)]
+    pub dependencies_repos: Option<Utf8PathBuf>,
 }
 
 #[derive(Debug, Args)]
 #[command(group = clap::ArgGroup::new("common_justfile_mode").args(["common_justfile", "no_common_justfile"]))]
 #[command(group = clap::ArgGroup::new("envrc_mode").args(["envrc", "no_envrc"]))]
+#[command(group = clap::ArgGroup::new("dependencies_repos_mode").args(["dependencies_repos", "no_dependencies_repos"]))]
 pub struct WorkspaceUpdateArgs {
     #[arg(long)]
     pub common_justfile: Option<Utf8PathBuf>,
@@ -63,4 +66,8 @@ pub struct WorkspaceUpdateArgs {
     pub envrc: Option<Utf8PathBuf>,
     #[arg(long)]
     pub no_envrc: bool,
+    #[arg(long)]
+    pub dependencies_repos: Option<Utf8PathBuf>,
+    #[arg(long)]
+    pub no_dependencies_repos: bool,
 }

@@ -20,6 +20,7 @@ pub fn run(cli: Cli) -> Result<u8> {
                 &args.workspace,
                 args.common_justfile.as_deref(),
                 args.envrc.as_deref(),
+                args.dependencies_repos.as_deref(),
             )?;
             println!("initialized workspace at {}", args.workspace);
             Ok(0)
@@ -128,5 +129,7 @@ fn workspace_update(args: WorkspaceUpdateArgs) -> workspace::WorkspaceUpdate {
         remove_common_justfile: args.no_common_justfile,
         envrc: args.envrc,
         remove_envrc: args.no_envrc,
+        dependencies_repos: args.dependencies_repos,
+        remove_dependencies_repos: args.no_dependencies_repos,
     }
 }
