@@ -70,6 +70,13 @@ just lidar start
 After `init`, rws commands can run from the workspace root or any
 subdirectory. rws finds the workspace by walking up to `.rws/rws.toml`.
 
+rws records the source path of each managed workspace file in `.rws/rws.toml`.
+After editing those originals, refresh the workspace copies with:
+
+```bash
+rws update
+```
+
 To remove managed workspace files later:
 
 ```bash

@@ -68,6 +68,9 @@ mod tests {
                 common_justfile: Some(".rws/justfile.common".into()),
                 envrc: None,
                 dependencies_repos: None,
+                common_justfile_source: None,
+                envrc_source: None,
+                dependencies_repos_source: None,
             },
             packages: vec![
                 PackageEntry {
@@ -125,6 +128,9 @@ mod tests {
                 common_justfile: None,
                 envrc: None,
                 dependencies_repos: None,
+                common_justfile_source: None,
+                envrc_source: None,
+                dependencies_repos_source: None,
             },
             packages: vec![
                 PackageEntry {

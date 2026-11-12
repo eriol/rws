@@ -258,6 +258,25 @@ pub fn doctor_workspace(workspace_root: &Utf8Path) -> Result<DoctorReport> {
         }
     }
 
+    let config = &manifest.workspace;
+    for (label, managed, source) in [
+        (
+            "common justfile",
+            &config.common_justfile,
+            &config.common_justfile_source,
+        ),
+        ("envrc", &config.envrc, &config.envrc_source),
+        (
+            "dependencies.repos",
+            &config.dependencies_repos,
+            &config.dependencies_repos_source,
+        ),
+    ] {
+        if let (Some(managed), Some(source)) = (managed, source) {
+            check_recorded_source(&mut report, label, &workspace_root.join(managed), source)?;
+        }
+    }
+
     for package in &manifest.packages {
         if !package.source.exists() {
             report.errors.push(format!(
@@ -311,6 +330,36 @@ pub fn doctor_workspace(workspace_root: &Utf8Path) -> Result<DoctorReport> {
     Ok(report)
 }
 
+/// Warns when `source` is missing or its contents differ from `managed`.
+/// Skips the comparison when `managed` is missing; that case is reported separately.
+fn check_recorded_source(
+    report: &mut DoctorReport,
+    label: &str,
+    managed: &Utf8Path,
+    source: &Utf8Path,
+) -> Result<()> {
+    if !source.exists() {
+        report
+            .warnings
+            .push(format!("missing recorded {label} source: {source}"));
+        return Ok(());
+    }
+    if !managed.exists() {
+        return Ok(());
+    }
+
+    let managed_contents =
+        fs::read_to_string(managed).with_context(|| format!("failed to read {managed}"))?;
+    let source_contents =
+        fs::read_to_string(source).with_context(|| format!("failed to read {source}"))?;
+    if managed_contents != source_contents {
+        report.warnings.push(format!(
+            "managed {label} differs from recorded source {source}; run `rws update` to refresh it"
+        ));
+    }
+    Ok(())
+}
+
 pub fn generate_and_write_justfile(workspace_root: &Utf8Path, manifest: &Manifest) -> Result<()> {
     let justfile_path = workspace_root.join("justfile");
     ensure_generated_justfile_can_be_written(&justfile_path)?;
@@ -351,57 +400,77 @@ fn apply_workspace_file_updates(
     manifest: &mut Manifest,
     update: WorkspaceUpdate,
 ) -> Result<()> {
-    if let Some(common_source) = update.common_justfile.as_deref() {
-        copy_managed_file(workspace_root, common_source, COMMON_JUSTFILE)?;
-        manifest.workspace.common_justfile = Some(Utf8PathBuf::from(COMMON_JUSTFILE));
-    } else if update.remove_common_justfile {
+    // Without an explicit path, each managed file is refreshed from its recorded source.
+    let config = &mut manifest.workspace;
+
+    if update.remove_common_justfile {
         remove_managed_file(workspace_root, COMMON_JUSTFILE)?;
-        manifest.workspace.common_justfile = None;
+        config.common_justfile = None;
+        config.common_justfile_source = None;
+    } else if let Some(source) = update
+        .common_justfile
+        .or_else(|| config.common_justfile_source.clone())
+    {
+        config.common_justfile_source =
+            install_managed_file(workspace_root, &source, COMMON_JUSTFILE)?;
+        config.common_justfile = Some(Utf8PathBuf::from(COMMON_JUSTFILE));
     }
 
-    if let Some(envrc_source) = update.envrc.as_deref() {
-        copy_managed_file(workspace_root, envrc_source, WORKSPACE_ENVRC)?;
+    if update.remove_envrc {
+        remove_managed_file(workspace_root, WORKSPACE_ENVRC)?;
+        remove_root_envrc(workspace_root)?;
+        config.envrc = None;
+        config.envrc_source = None;
+    } else if let Some(source) = update.envrc.or_else(|| config.envrc_source.clone()) {
+        config.envrc_source = install_managed_file(workspace_root, &source, WORKSPACE_ENVRC)?;
         copy_file(
             &workspace_root.join(WORKSPACE_ENVRC),
             &workspace_root.join(".envrc"),
         )?;
-        manifest.workspace.envrc = Some(Utf8PathBuf::from(WORKSPACE_ENVRC));
-    } else if update.remove_envrc {
-        remove_managed_file(workspace_root, WORKSPACE_ENVRC)?;
-        remove_root_envrc(workspace_root)?;
-        manifest.workspace.envrc = None;
+        config.envrc = Some(Utf8PathBuf::from(WORKSPACE_ENVRC));
     }
 
-    if let Some(dependencies_repos_source) = update.dependencies_repos.as_deref() {
-        copy_managed_file(
-            workspace_root,
-            dependencies_repos_source,
-            DEPENDENCIES_REPOS,
-        )?;
+    if update.remove_dependencies_repos {
+        remove_managed_file(workspace_root, DEPENDENCIES_REPOS)?;
+        remove_root_dependencies_repos(workspace_root)?;
+        config.dependencies_repos = None;
+        config.dependencies_repos_source = None;
+    } else if let Some(source) = update
+        .dependencies_repos
+        .or_else(|| config.dependencies_repos_source.clone())
+    {
+        config.dependencies_repos_source =
+            install_managed_file(workspace_root, &source, DEPENDENCIES_REPOS)?;
         copy_file(
             &workspace_root.join(DEPENDENCIES_REPOS),
             &workspace_root.join("dependencies.repos"),
         )?;
-        manifest.workspace.dependencies_repos = Some(Utf8PathBuf::from(DEPENDENCIES_REPOS));
-    } else if update.remove_dependencies_repos {
-        remove_managed_file(workspace_root, DEPENDENCIES_REPOS)?;
-        remove_root_dependencies_repos(workspace_root)?;
-        manifest.workspace.dependencies_repos = None;
+        config.dependencies_repos = Some(Utf8PathBuf::from(DEPENDENCIES_REPOS));
     }
 
     Ok(())
 }
 
-fn copy_managed_file(
+/// Copies `source` to `destination` under `workspace_root` and returns the canonical `source`
+/// to record in the manifest. Returns `None` without copying when `source` is `destination`
+/// itself, since copying a file onto itself truncates it.
+fn install_managed_file(
     workspace_root: &Utf8Path,
     source: &Utf8Path,
     destination: &str,
-) -> Result<()> {
+) -> Result<Option<Utf8PathBuf>> {
     if !path_exists(source) {
         bail!(RwsError::MissingPath(source.to_path_buf()));
     }
 
-    copy_file(source, &workspace_root.join(destination))
+    let source = canonicalize_utf8(source)?;
+    let destination = workspace_root.join(destination);
+    if path_exists(&destination) && canonicalize_utf8(&destination)? == source {
+        return Ok(None);
+    }
+
+    copy_file(&source, &destination)?;
+    Ok(Some(source))
 }
 
 fn remove_managed_file(workspace_root: &Utf8Path, path: &str) -> Result<()> {

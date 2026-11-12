@@ -32,6 +32,15 @@ pub struct WorkspaceConfig {
     pub envrc: Option<Utf8PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dependencies_repos: Option<Utf8PathBuf>,
+    /// Absolute path `common_justfile` is copied from on `rws update`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub common_justfile_source: Option<Utf8PathBuf>,
+    /// Absolute path `envrc` is copied from on `rws update`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub envrc_source: Option<Utf8PathBuf>,
+    /// Absolute path `dependencies_repos` is copied from on `rws update`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dependencies_repos_source: Option<Utf8PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -57,6 +66,9 @@ impl Manifest {
                 common_justfile,
                 envrc,
                 dependencies_repos,
+                common_justfile_source: None,
+                envrc_source: None,
+                dependencies_repos_source: None,
             },
             packages: Vec::new(),
         }
@@ -136,6 +148,9 @@ mod tests {
                 common_justfile: Some(COMMON_JUSTFILE.into()),
                 envrc: Some(WORKSPACE_ENVRC.into()),
                 dependencies_repos: Some(DEPENDENCIES_REPOS.into()),
+                common_justfile_source: Some("/tmp/common.just".into()),
+                envrc_source: Some("/tmp/envrc".into()),
+                dependencies_repos_source: Some("/tmp/dependencies.repos".into()),
             },
             packages: vec![PackageEntry {
                 name: "camera".into(),

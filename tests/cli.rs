@@ -335,6 +335,164 @@ fn workspace_update_removes_common_justfile() {
     assert!(!workspace.join(".rws/justfile.common").exists());
     let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
     assert!(!manifest.contains("common_justfile = \".rws/justfile.common\""));
+    assert!(!manifest.contains("common_justfile_source"));
+}
+
+#[test]
+fn workspace_update_refreshes_managed_files_from_recorded_sources() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let common = temp.path().join("common.just");
+    let envrc = temp.path().join("envrc");
+    let dependencies_repos = temp.path().join("dependencies.repos");
+    fs::write(&common, "build:\n  @echo build\n").unwrap();
+    fs::write(&envrc, "export A=1\n").unwrap();
+    fs::write(&dependencies_repos, "repositories:\n").unwrap();
+
+    bin()
+        .args([
+            "init",
+            workspace.to_str().unwrap(),
+            "--common-justfile",
+            common.to_str().unwrap(),
+            "--envrc",
+            envrc.to_str().unwrap(),
+            "--dependencies-repos",
+            dependencies_repos.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    let canonical_common = fs::canonicalize(&common).unwrap();
+    assert!(manifest.contains(&format!(
+        "common_justfile_source = \"{}\"",
+        canonical_common.display()
+    )));
+
+    fs::write(&common, "test:\n  @echo test\n").unwrap();
+    fs::write(&envrc, "export A=2\n").unwrap();
+    fs::write(&dependencies_repos, "repositories:\n  foo:\n").unwrap();
+
+    bin()
+        .current_dir(&workspace)
+        .arg("update")
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/justfile.common")).unwrap(),
+        "test:\n  @echo test\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/envrc")).unwrap(),
+        "export A=2\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join(".envrc")).unwrap(),
+        "export A=2\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/dependencies.repos")).unwrap(),
+        "repositories:\n  foo:\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join("dependencies.repos")).unwrap(),
+        "repositories:\n  foo:\n"
+    );
+}
+
+#[test]
+fn workspace_update_fails_when_recorded_source_is_missing() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let common = temp.path().join("common.just");
+    fs::write(&common, "build:\n  @echo build\n").unwrap();
+
+    bin()
+        .args([
+            "init",
+            workspace.to_str().unwrap(),
+            "--common-justfile",
+            common.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    fs::remove_file(&common).unwrap();
+
+    bin()
+        .current_dir(&workspace)
+        .arg("update")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("path does not exist"));
+
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/justfile.common")).unwrap(),
+        "build:\n  @echo build\n"
+    );
+}
+
+#[test]
+fn workspace_update_with_managed_file_as_source_keeps_contents() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let common = temp.path().join("common.just");
+    fs::write(&common, "build:\n  @echo build\n").unwrap();
+
+    bin()
+        .args([
+            "init",
+            workspace.to_str().unwrap(),
+            "--common-justfile",
+            common.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    bin()
+        .current_dir(&workspace)
+        .args(["update", "--common-justfile", ".rws/justfile.common"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/justfile.common")).unwrap(),
+        "build:\n  @echo build\n"
+    );
+    let manifest = fs::read_to_string(workspace.join(".rws/rws.toml")).unwrap();
+    assert!(manifest.contains("common_justfile = \".rws/justfile.common\""));
+    assert!(!manifest.contains("common_justfile_source"));
+}
+
+#[test]
+fn doctor_warns_when_managed_file_differs_from_recorded_source() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let common = temp.path().join("common.just");
+    fs::write(&common, "build:\n  @echo build\n").unwrap();
+
+    bin()
+        .args([
+            "init",
+            workspace.to_str().unwrap(),
+            "--common-justfile",
+            common.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    fs::write(&common, "test:\n  @echo test\n").unwrap();
+
+    bin()
+        .current_dir(&workspace)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "warning: managed common justfile differs from recorded source",
+        ));
 }
 
 #[test]
