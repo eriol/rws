@@ -74,7 +74,9 @@ rws records the source path of each managed workspace file in `.rws/rws.toml`.
 After editing those originals, refresh the workspace copies with:
 
 ```bash
-rws update
+rws update                    # all managed files with a recorded source
+rws update --common-justfile  # only the common justfile
+rws update --envrc --dependencies-repos
 ```
 
 To remove managed workspace files later:

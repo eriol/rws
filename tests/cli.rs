@@ -403,6 +403,85 @@ fn workspace_update_refreshes_managed_files_from_recorded_sources() {
 }
 
 #[test]
+fn workspace_update_refreshes_only_named_files() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+    let common = temp.path().join("common.just");
+    let envrc = temp.path().join("envrc");
+    let new_envrc = temp.path().join("new_envrc");
+    fs::write(&common, "build:\n  @echo build\n").unwrap();
+    fs::write(&envrc, "export A=1\n").unwrap();
+    fs::write(&new_envrc, "export B=1\n").unwrap();
+
+    bin()
+        .args([
+            "init",
+            workspace.to_str().unwrap(),
+            "--common-justfile",
+            common.to_str().unwrap(),
+            "--envrc",
+            envrc.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    fs::write(&common, "test:\n  @echo test\n").unwrap();
+    fs::write(&envrc, "export A=2\n").unwrap();
+
+    bin()
+        .current_dir(&workspace)
+        .args(["update", "--common-justfile"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/justfile.common")).unwrap(),
+        "test:\n  @echo test\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/envrc")).unwrap(),
+        "export A=1\n"
+    );
+
+    fs::write(&common, "lint:\n  @echo lint\n").unwrap();
+
+    bin()
+        .current_dir(&workspace)
+        .args(["update", "--envrc", new_envrc.to_str().unwrap()])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(workspace.join(".envrc")).unwrap(),
+        "export B=1\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join(".rws/justfile.common")).unwrap(),
+        "test:\n  @echo test\n"
+    );
+}
+
+#[test]
+fn workspace_update_refresh_without_recorded_source_fails() {
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().join("ws");
+
+    bin()
+        .args(["init", workspace.to_str().unwrap()])
+        .assert()
+        .success();
+
+    bin()
+        .current_dir(&workspace)
+        .args(["update", "--common-justfile"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "no recorded common justfile source; pass `--common-justfile <PATH>` to set one",
+        ));
+}
+
+#[test]
 fn workspace_update_fails_when_recorded_source_is_missing() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().join("ws");

@@ -28,14 +28,50 @@ pub struct DoctorReport {
     pub errors: Vec<String>,
 }
 
+/// Change applied to one managed workspace file.
+#[derive(Debug, Default)]
+pub enum ManagedFileUpdate {
+    #[default]
+    Keep,
+    /// Copy from this path and record it as the source.
+    Set(Utf8PathBuf),
+    /// Copy again from the recorded source.
+    Refresh,
+    Remove,
+}
+
+impl ManagedFileUpdate {
+    fn from_path(path: Option<&Utf8Path>) -> Self {
+        path.map_or(Self::Keep, |path| Self::Set(path.to_path_buf()))
+    }
+
+    fn refresh_if_recorded(source: &Option<Utf8PathBuf>) -> Self {
+        if source.is_some() {
+            Self::Refresh
+        } else {
+            Self::Keep
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct WorkspaceUpdate {
-    pub common_justfile: Option<Utf8PathBuf>,
-    pub remove_common_justfile: bool,
-    pub envrc: Option<Utf8PathBuf>,
-    pub remove_envrc: bool,
-    pub dependencies_repos: Option<Utf8PathBuf>,
-    pub remove_dependencies_repos: bool,
+    pub common_justfile: ManagedFileUpdate,
+    pub envrc: ManagedFileUpdate,
+    pub dependencies_repos: ManagedFileUpdate,
+}
+
+impl WorkspaceUpdate {
+    fn is_empty(&self) -> bool {
+        matches!(
+            self,
+            Self {
+                common_justfile: ManagedFileUpdate::Keep,
+                envrc: ManagedFileUpdate::Keep,
+                dependencies_repos: ManagedFileUpdate::Keep,
+            }
+        )
+    }
 }
 
 pub fn init_workspace(
@@ -66,20 +102,28 @@ pub fn init_workspace(
         workspace_root,
         &mut manifest,
         WorkspaceUpdate {
-            common_justfile: common_justfile.map(Utf8Path::to_path_buf),
-            remove_common_justfile: false,
-            envrc: envrc.map(Utf8Path::to_path_buf),
-            remove_envrc: false,
-            dependencies_repos: dependencies_repos.map(Utf8Path::to_path_buf),
-            remove_dependencies_repos: false,
+            common_justfile: ManagedFileUpdate::from_path(common_justfile),
+            envrc: ManagedFileUpdate::from_path(envrc),
+            dependencies_repos: ManagedFileUpdate::from_path(dependencies_repos),
         },
     )?;
     manifest.save(&manifest_path)?;
     generate_and_write_justfile(workspace_root, &manifest)
 }
 
-pub fn update_workspace(workspace_root: &Utf8Path, update: WorkspaceUpdate) -> Result<()> {
+/// Applies `update`; an empty `update` refreshes every managed file with a recorded source.
+pub fn update_workspace(workspace_root: &Utf8Path, mut update: WorkspaceUpdate) -> Result<()> {
     let mut manifest = load_manifest(workspace_root)?;
+    if update.is_empty() {
+        let config = &manifest.workspace;
+        update = WorkspaceUpdate {
+            common_justfile: ManagedFileUpdate::refresh_if_recorded(&config.common_justfile_source),
+            envrc: ManagedFileUpdate::refresh_if_recorded(&config.envrc_source),
+            dependencies_repos: ManagedFileUpdate::refresh_if_recorded(
+                &config.dependencies_repos_source,
+            ),
+        };
+    }
     apply_workspace_file_updates(workspace_root, &mut manifest, update)?;
     manifest.save(&manifest_path(workspace_root))?;
     generate_and_write_justfile(workspace_root, &manifest)
@@ -400,28 +444,44 @@ fn apply_workspace_file_updates(
     manifest: &mut Manifest,
     update: WorkspaceUpdate,
 ) -> Result<()> {
-    // Without an explicit path, each managed file is refreshed from its recorded source.
     let config = &mut manifest.workspace;
 
-    if update.remove_common_justfile {
-        remove_managed_file(workspace_root, COMMON_JUSTFILE)?;
-        config.common_justfile = None;
-        config.common_justfile_source = None;
-    } else if let Some(source) = update
-        .common_justfile
-        .or_else(|| config.common_justfile_source.clone())
-    {
+    let common_source = match update.common_justfile {
+        ManagedFileUpdate::Keep => None,
+        ManagedFileUpdate::Set(path) => Some(path),
+        ManagedFileUpdate::Refresh => Some(recorded_source(
+            &config.common_justfile_source,
+            "common justfile",
+            "--common-justfile",
+        )?),
+        ManagedFileUpdate::Remove => {
+            remove_managed_file(workspace_root, COMMON_JUSTFILE)?;
+            config.common_justfile = None;
+            config.common_justfile_source = None;
+            None
+        }
+    };
+    if let Some(source) = common_source {
         config.common_justfile_source =
             install_managed_file(workspace_root, &source, COMMON_JUSTFILE)?;
         config.common_justfile = Some(Utf8PathBuf::from(COMMON_JUSTFILE));
     }
 
-    if update.remove_envrc {
-        remove_managed_file(workspace_root, WORKSPACE_ENVRC)?;
-        remove_root_envrc(workspace_root)?;
-        config.envrc = None;
-        config.envrc_source = None;
-    } else if let Some(source) = update.envrc.or_else(|| config.envrc_source.clone()) {
+    let envrc_source = match update.envrc {
+        ManagedFileUpdate::Keep => None,
+        ManagedFileUpdate::Set(path) => Some(path),
+        ManagedFileUpdate::Refresh => {
+            Some(recorded_source(&config.envrc_source, "envrc", "--envrc")?)
+        }
+        ManagedFileUpdate::Remove => {
+            remove_managed_file(workspace_root, WORKSPACE_ENVRC)?;
+            remove_root_envrc(workspace_root)?;
+            config.envrc = None;
+            config.envrc_source = None;
+            None
+        }
+    };
+    if let Some(source) = envrc_source {
         config.envrc_source = install_managed_file(workspace_root, &source, WORKSPACE_ENVRC)?;
         copy_file(
             &workspace_root.join(WORKSPACE_ENVRC),
@@ -430,15 +490,23 @@ fn apply_workspace_file_updates(
         config.envrc = Some(Utf8PathBuf::from(WORKSPACE_ENVRC));
     }
 
-    if update.remove_dependencies_repos {
-        remove_managed_file(workspace_root, DEPENDENCIES_REPOS)?;
-        remove_root_dependencies_repos(workspace_root)?;
-        config.dependencies_repos = None;
-        config.dependencies_repos_source = None;
-    } else if let Some(source) = update
-        .dependencies_repos
-        .or_else(|| config.dependencies_repos_source.clone())
-    {
+    let dependencies_repos_source = match update.dependencies_repos {
+        ManagedFileUpdate::Keep => None,
+        ManagedFileUpdate::Set(path) => Some(path),
+        ManagedFileUpdate::Refresh => Some(recorded_source(
+            &config.dependencies_repos_source,
+            "dependencies.repos",
+            "--dependencies-repos",
+        )?),
+        ManagedFileUpdate::Remove => {
+            remove_managed_file(workspace_root, DEPENDENCIES_REPOS)?;
+            remove_root_dependencies_repos(workspace_root)?;
+            config.dependencies_repos = None;
+            config.dependencies_repos_source = None;
+            None
+        }
+    };
+    if let Some(source) = dependencies_repos_source {
         config.dependencies_repos_source =
             install_managed_file(workspace_root, &source, DEPENDENCIES_REPOS)?;
         copy_file(
@@ -449,6 +517,14 @@ fn apply_workspace_file_updates(
     }
 
     Ok(())
+}
+
+/// Returns the recorded `source`; fails when none is recorded.
+fn recorded_source(source: &Option<Utf8PathBuf>, label: &str, flag: &str) -> Result<Utf8PathBuf> {
+    match source {
+        Some(source) => Ok(source.clone()),
+        None => bail!("no recorded {label} source; pass `{flag} <PATH>` to set one"),
+    }
 }
 
 /// Copies `source` to `destination` under `workspace_root` and returns the canonical `source`

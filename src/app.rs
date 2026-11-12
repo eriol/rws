@@ -7,7 +7,7 @@ use crate::cli::{Cli, Command, CompletionShell, PackageCommand, WorkspaceUpdateA
 use crate::errors::RwsError;
 use crate::fs_utils::{path_exists, utf8_from_path_buf};
 use crate::manifest::manifest_path;
-use crate::workspace;
+use crate::workspace::{self, ManagedFileUpdate};
 
 pub fn run(cli: Cli) -> Result<u8> {
     match cli.command {
@@ -125,11 +125,21 @@ fn discover_workspace_root() -> Result<Utf8PathBuf> {
 
 fn workspace_update(args: WorkspaceUpdateArgs) -> workspace::WorkspaceUpdate {
     workspace::WorkspaceUpdate {
-        common_justfile: args.common_justfile,
-        remove_common_justfile: args.no_common_justfile,
-        envrc: args.envrc,
-        remove_envrc: args.no_envrc,
-        dependencies_repos: args.dependencies_repos,
-        remove_dependencies_repos: args.no_dependencies_repos,
+        common_justfile: managed_file_update(args.common_justfile, args.no_common_justfile),
+        envrc: managed_file_update(args.envrc, args.no_envrc),
+        dependencies_repos: managed_file_update(
+            args.dependencies_repos,
+            args.no_dependencies_repos,
+        ),
+    }
+}
+
+/// Maps `--<file> [PATH]` and `--no-<file>` to a `ManagedFileUpdate`.
+fn managed_file_update(path: Option<Option<Utf8PathBuf>>, remove: bool) -> ManagedFileUpdate {
+    match path {
+        Some(Some(path)) => ManagedFileUpdate::Set(path),
+        Some(None) => ManagedFileUpdate::Refresh,
+        None if remove => ManagedFileUpdate::Remove,
+        None => ManagedFileUpdate::Keep,
     }
 }

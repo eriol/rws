@@ -58,16 +58,19 @@ pub struct InitArgs {
 #[command(group = clap::ArgGroup::new("envrc_mode").args(["envrc", "no_envrc"]))]
 #[command(group = clap::ArgGroup::new("dependencies_repos_mode").args(["dependencies_repos", "no_dependencies_repos"]))]
 pub struct WorkspaceUpdateArgs {
-    #[arg(long)]
-    pub common_justfile: Option<Utf8PathBuf>,
+    /// Copy PATH as the common justfile; without PATH, re-copy from the recorded source
+    #[arg(long, value_name = "PATH")]
+    pub common_justfile: Option<Option<Utf8PathBuf>>,
     #[arg(long)]
     pub no_common_justfile: bool,
-    #[arg(long)]
-    pub envrc: Option<Utf8PathBuf>,
+    /// Copy PATH as the envrc; without PATH, re-copy from the recorded source
+    #[arg(long, value_name = "PATH")]
+    pub envrc: Option<Option<Utf8PathBuf>>,
     #[arg(long)]
     pub no_envrc: bool,
-    #[arg(long)]
-    pub dependencies_repos: Option<Utf8PathBuf>,
+    /// Copy PATH as dependencies.repos; without PATH, re-copy from the recorded source
+    #[arg(long, value_name = "PATH")]
+    pub dependencies_repos: Option<Option<Utf8PathBuf>>,
     #[arg(long)]
     pub no_dependencies_repos: bool,
 }
